@@ -260,15 +260,18 @@ void loop()
     digitalWrite(RELAY_HEATER, HIGH);
     digitalWrite(RELAY_FAN, LOW);
   }
-  else if (tempSkinReading > TEMP_SKIN_THRESHOLD_H)
-  {
-    digitalWrite(RELAY_HEATER, LOW);
-    digitalWrite(RELAY_FAN, HIGH);
-  }
   else
   {
-    digitalWrite(RELAY_HEATER, LOW);
-    digitalWrite(RELAY_FAN, LOW);
+    if (tempSkinReading > TEMP_SKIN_THRESHOLD_H)
+    {
+      digitalWrite(RELAY_HEATER, LOW);
+      digitalWrite(RELAY_FAN, HIGH);
+    }
+    else
+    {
+      digitalWrite(RELAY_HEATER, LOW);
+      digitalWrite(RELAY_FAN, LOW);
+    }
   }
 
   if (h > HM_THRESHOLD)
