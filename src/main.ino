@@ -3,6 +3,7 @@
 #include <DHT.h>
 #define USE_ARDUINO_INTERRUPTS true
 //#include <ESP8266WiFi.h>
+#include <SoftwareSerial.h>
 
 // includes
 #include <PulseSensorPlayground.h>
@@ -21,26 +22,31 @@ const char *password = "01027099005";
 String GOOGLE_SHEET_ID = "";
 
 // Pin definitions
-#define COLOR_0 7 // Module pins wiring
-#define COLOR_1 8
-#define COLOR_2 9
-#define COLOR_3 10
-#define COLOR_OUT 11
+// #define COLOR_0 8 // Module pins wiring
+// #define COLOR_1 9
+#define COLOR_2 6
+#define COLOR_3 7
+#define COLOR_OUT 8
+int redfrequency = 0;
+int greenfrequency = 0;
+int bluefrequency = 0;
 
 int data = 0; // This is where we're going to stock our values
 
-// #define LCD_D4 11
-// #define LCD_D5 10
-// #define LCD_D6 9
-// #define LCD_D7 8
-// #define LCD_E 7
-// #define LCD_RW 6
-// #define LCD_RS 5
+#define LCD_D4 A2
+#define LCD_D5 A3
+#define LCD_D6 A4
+#define LCD_D7 A5
+#define LCD_E 9
+#define LCD_RW 10
+#define LCD_RS 11
+#define MAX_SLIDES 4
+int slideNumber = 0;
 
-#define BUZZER_PIN 5
-#define RELAY_HEATER 4
-#define RELAY_FAN 2
-#define DHT_PIN 3
+#define BUZZER_PIN 2
+#define RELAY_HEATER 3
+#define RELAY_FAN 4
+#define DHT_PIN 5
 #define DHT_TYPE DHT11
 #define ESP_TX_PIN 1
 #define ESP_RX_PIN 0
@@ -54,12 +60,31 @@ int data = 0; // This is where we're going to stock our values
 #define TEMP_AIR_THRESHOLD_L 25
 #define HEART_RATE_THRESHOLD 120
 
+// no of main loops before jaundice detection
+#define JAUNDICE_THRESHOLD 10
+
+/*
+ALARM CODE GUIDE
+1 - High temperature
+2 - Low temperature
+3 - High heart rate
+4 - Low heart rate
+5 - High humidity
+6 - Low humidity
+7 - High air temperature
+8 - Low air temperature
+9 - Sensor error
+404 - baby kidnapped
+*/
+
 int alarmState = 0;
+int alarmCounter = 0;
+uint32_t countJaundice = 0;
+
+int currentAlarmMillis = millis();
 int currentMillis = millis();
 int previousMillis = 0;
 #define BUZ_INTERVAL_MS 500
-
-#include <SoftwareSerial.h>
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
@@ -72,7 +97,7 @@ const int PULSE_BLINK = LED_BUILTIN;
 const int THRESHOLD = 550; // Adjust this number to avoid noise when idle
                            // Configure the PulseSensor manager.
 
-int alarmCounter = 0;
+LiquidCrystal lcd(LCD_RS, LCD_RW, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
 SoftwareSerial ESP8266(10, 11); // RX,TX
 
@@ -80,6 +105,13 @@ void setup()
 {
 
   Serial.begin(9600);
+
+  // init lcd and test
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0);
+  lcd.print("Loading..");
+
+  // init hardware actuator pins
   pinMode(RELAY_HEATER, OUTPUT);
   pinMode(RELAY_FAN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
@@ -99,14 +131,15 @@ void setup()
     Serial.println("We created a pulseSensor Object !"); // This prints one time at Arduino power-up,  or on Arduino reset.
   }
 
-  pinMode(COLOR_0, OUTPUT);
-  pinMode(COLOR_1, OUTPUT);
+  // pinMode(COLOR_0, OUTPUT);
+  // pinMode(COLOR_1, OUTPUT);
   pinMode(COLOR_2, OUTPUT);
   pinMode(COLOR_3, OUTPUT);
   pinMode(COLOR_OUT, INPUT);
 
-  digitalWrite(COLOR_0, HIGH); // Putting S0/S1 on HIGH/HIGH levels means the output frequency scalling is at 100% (recommended)
-  digitalWrite(COLOR_1, HIGH);
+  // Done in hardware
+  //  digitalWrite(COLOR_0, HIGH); // Putting S0/S1 on HIGH/HIGH levels means the output frequency scalling is at 100% (recommended)
+  //  digitalWrite(COLOR_1, HIGH);
 
   // Init the DHT11 sensor
   Serial.println("DHT Started");
@@ -136,15 +169,15 @@ void loop()
 {
 
   // alarm block
-  if (alarmState == 1)
+  if (alarmState >= 1)
   {
     // blink without delay using micros
-    unsigned long currentMillis = millis();
+    unsigned long currentAlarmMillis = millis();
     int state = digitalRead(BUZZER_PIN);
 
-    if (currentMillis - previousMillis >= BUZ_INTERVAL_MS)
+    if (currentAlarmMillis - previousMillis >= BUZ_INTERVAL_MS)
     {
-      previousMillis = currentMillis;
+      previousMillis = currentAlarmMillis;
 
       if (state == LOW)
         state = HIGH;
@@ -161,12 +194,15 @@ void loop()
 
   // end alarm block
 
+  // display lcd block
+  lcdSlidesLoop();
+
   // thermistor skin read
-  float reading = thermistorRead();
+  float tempSkinReading = thermistorRead();
 #if DEBUG_MODE == 1
   Serial.println();
   Serial.println("Temp skin: ");
-  Serial.println(reading);
+  Serial.println(tempSkinReading);
 #endif
 
   // temperature and humidity air read
@@ -179,14 +215,14 @@ void loop()
   Serial.println(h);
 #endif
 
-  if (isnan(reading) || isnan(h) || isnan(t))
+  if (isnan(tempSkinReading) || isnan(h) || isnan(t))
   {
     alarmCounter++;
     // debouncing alarm
     if (alarmCounter > 10)
     {
-    Serial.println("Sensor failure!");
-      alarmState = 1;
+      Serial.println("Sensor failure!");
+      alarmState = 9;
     }
     // return;
   }
@@ -199,7 +235,7 @@ void loop()
   // heart rate read
 
   Serial.println("Reading Pulse");
-  Serial.println(analogRead(PULSE_INPUT));
+  // Serial.println(analogRead(PULSE_INPUT));
   Serial.println(pulseSensor.getBeatsPerMinute());
 
   /*
@@ -213,17 +249,18 @@ void loop()
 
   // color read
   Serial.println("Color:");
-  Serial.println(getColor());
+  // Serial.println(getColor());
+  colorLoop();
 
   // lcd print?
 
   // heater and fan control
-  if (reading < TEMP_SKIN_THRESHOLD_L)
+  if (tempSkinReading < TEMP_SKIN_THRESHOLD_L)
   {
     digitalWrite(RELAY_HEATER, HIGH);
     digitalWrite(RELAY_FAN, LOW);
   }
-  else if (reading > TEMP_SKIN_THRESHOLD_H)
+  else if (tempSkinReading > TEMP_SKIN_THRESHOLD_H)
   {
     digitalWrite(RELAY_HEATER, LOW);
     digitalWrite(RELAY_FAN, HIGH);
@@ -236,6 +273,7 @@ void loop()
 
   if (h > HM_THRESHOLD)
   {
+    // TODO: fix fan electiricty
     digitalWrite(RELAY_FAN, HIGH);
   }
   else
@@ -273,59 +311,183 @@ float thermistorRead(void)
   return temperature;
 }
 
-// color module
-int COLOR_data = 0; // This is where we're going to stock our values
-int red;
-int grn;
-int blu;
-String color = "";
-
-////////////////////////////////////////////////////////////////////////////////
-String getColor()
+void colorLoop()
 {
-  readRGB();
 
-  if (red > 8 && red < 18 && grn > 9 && grn < 19 && blu > 8 && blu < 16)
-    color = "WHITE";
-  else if (red > 80 && red < 125 && grn > 90 && grn < 125 && blu > 80 && blu < 125)
-    color = "BLACK";
-  else if (red > 12 && red < 30 && grn > 40 && grn < 70 && blu > 33 && blu < 70)
-    color = "RED";
-  else if (red > 50 && red < 95 && grn > 35 && grn < 70 && blu > 45 && blu < 85)
-    color = "GREEN";
-  else if (red > 10 && red < 20 && grn > 10 && grn < 25 && blu > 20 && blu < 38)
-    color = "YELLOW";
-  else if (red > 65 && red < 125 && grn > 65 && grn < 115 && blu > 32 && blu < 65)
-    color = "BLUE";
-  else
-    color = "NO_COLOR";
-
-  return color;
-}
-
-/* read RGB components */
-void readRGB()
-{
-  red = 0;
-  grn = 0;
-  blu = 0;
-  int n = 10;
-
-  // read red component
+  // Setting red filtered photodiodes to be read
   digitalWrite(COLOR_2, LOW);
   digitalWrite(COLOR_3, LOW);
-  red = red + pulseIn(COLOR_OUT, LOW);
-  delay(10);
+  // Reading the output frequency
+  redfrequency = pulseIn(COLOR_OUT, LOW);
 
-  // read green component
+  delay(100);
+  // Setting Green filtered photodiodes to be read
   digitalWrite(COLOR_2, HIGH);
   digitalWrite(COLOR_3, HIGH);
-  grn = grn + pulseIn(COLOR_OUT, LOW);
-  delay(10);
+  // Reading the output frequency
+  greenfrequency = pulseIn(COLOR_OUT, LOW);
+  // Printing the value on the serial monitor
 
-  // let's read blue component
+  delay(100);
+  // Setting Blue filtered photodiodes to be read
   digitalWrite(COLOR_2, LOW);
   digitalWrite(COLOR_3, HIGH);
-  blu = blu + pulseIn(COLOR_OUT, LOW);
-  delay(10);
+  // Reading the output frequency
+  bluefrequency = pulseIn(COLOR_OUT, LOW);
+  // Printing the value on the serial monitor
+
+  if (redfrequency > 25 && redfrequency < 77)
+  {
+    Serial.println("RED COLOUR");
+  }
+  else if (bluefrequency > 25 && bluefrequency < 77)
+  {
+    Serial.println("BLUE COLOUR");
+  }
+  else if (greenfrequency > 25 && greenfrequency < 77)
+
+  {
+    Serial.println("GREEN COLOUR");
+  }
+  else if (redfrequency > 77 && redfrequency < 130)
+  {
+    countJaundice++;
+    Serial.println("YELLOW COLOUR");
+  }
+  else if (redfrequency > 130 && redfrequency < 180)
+  {
+    countJaundice++;
+    Serial.println("ORANGE COLOUR");
+  }
+  else if (redfrequency > 180 && redfrequency < 230)
+  {
+    Serial.println("PINK COLOUR");
+  }
+  else if (redfrequency > 230 && redfrequency < 280)
+  {
+    Serial.println("PURPLE COLOUR");
+  }
+  else if (redfrequency > 280 && redfrequency < 330)
+  {
+    Serial.println("BROWN COLOUR");
+  }
+  else if (redfrequency > 330 && redfrequency < 380)
+  {
+    Serial.println("WHITE COLOUR");
+  }
+  else
+  {
+    Serial.println("NO COLOUR");
+  }
+}
+
+void lcdSlidesLoop()
+{
+  // display slideshow block
+  if (alarmState >= 1)
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("ALARM");
+    lcd.setCursor(0, 1);
+    switch (alarmState)
+    {
+    case 1:
+      lcd.print("HYPERTHERMIA");
+      break;
+    case 2:
+      lcd.print("HYPOTHERMIA");
+      break;
+    case 3:
+      lcd.print("TACHYCARDIA");
+      break;
+    case 4:
+      lcd.print("BRADYCARDIA");
+      break;
+    case 5:
+      lcd.print("HIGH HUMIDITY");
+      break;
+    case 6:
+      lcd.print("LOW HUMIDITY");
+      break;
+    case 7:
+      lcd.print("HIGH AIR TEMP");
+      break;
+    case 8:
+      lcd.print("LOW AIR TEMP");
+      break;
+    case 9:
+      lcd.print("SENSOR ERROR");
+      break;
+
+    default:
+      break;
+    }
+    lcd.print("CHECK SENSOR");
+  }
+  else
+  {
+    // check if 1000 millis passed since last check
+    if (millis() - currentMillis >= 2000)
+    {
+      currentMillis = millis();
+      if (slideNumber == MAX_SLIDES)
+      {
+        slideNumber = 0;
+        lcd.begin(16, 2);
+      }
+      else
+      {
+        switch (slideNumber)
+        {
+        case 0:
+          // display dht air temp and humidity
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Air Temp:");
+          lcd.print(dht.readTemperature());
+          lcd.setCursor(0, 1);
+          lcd.print("Humidity:");
+          lcd.print(dht.readHumidity());
+
+          break;
+        case 1:
+          // display skin temp
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Skin Temp:");
+          lcd.print(thermistorRead());
+          break;
+
+        case 2:
+          // display heart rate
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Heart Rate:");
+          lcd.print(pulseSensor.getBeatsPerMinute());
+
+          break;
+        case 3: // display is jaundiced?
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Jaundice:");
+          if (countJaundice > JAUNDICE_THRESHOLD)
+          {
+            lcd.print("YES");
+          }
+          else
+          {
+            lcd.print("NO");
+          }
+
+          break;
+
+        default:
+          break;
+        }
+
+        slideNumber++;
+      }
+    }
+  }
 }
