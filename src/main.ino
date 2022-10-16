@@ -47,9 +47,9 @@ int data = 0; // This is where we're going to stock our values
 
 #define TEMP_SKIN A0
 //#define HEART_RATE A1
-#define TEMP_SKIN_THRESHOLD_L 36.4
-#define TEMP_SKIN_THRESHOLD_H 38.2
-#define HM_THRESHOLD 00
+#define TEMP_SKIN_THRESHOLD_L 36
+#define TEMP_SKIN_THRESHOLD_H 37.4
+#define HM_THRESHOLD 60
 #define TEMP_AIR_THRESHOLD_H 35
 #define TEMP_AIR_THRESHOLD_L 25
 #define HEART_RATE_THRESHOLD 120
@@ -68,7 +68,7 @@ const int OUTPUT_TYPE = SERIAL_PLOTTER;
 
 const int PULSE_INPUT = A1;
 const int PULSE_BLINK = LED_BUILTIN;
-const int PULSE_FADE = 5;
+// const int PULSE_FADE = 13;
 const int THRESHOLD = 550; // Adjust this number to avoid noise when idle
                            // Configure the PulseSensor manager.
 
@@ -87,7 +87,7 @@ void setup()
   // Initialize the PulseSensor object
   pulseSensor.analogInput(PULSE_INPUT);
   pulseSensor.blinkOnPulse(PULSE_BLINK);
-  pulseSensor.fadeOnPulse(PULSE_FADE);
+  // pulseSensor.fadeOnPulse(PULSE_FADE);
 
   pulseSensor.setSerial(Serial);
   pulseSensor.setOutputType(OUTPUT_TYPE);
@@ -158,6 +158,7 @@ void loop()
   {
     digitalWrite(BUZZER_PIN, LOW);
   }
+
   // end alarm block
 
   // thermistor skin read
@@ -177,15 +178,22 @@ void loop()
   Serial.println("Humidity air: ");
   Serial.println(h);
 #endif
-  if (isnan(reading))
+
+  if (isnan(reading) || isnan(h) || isnan(t))
   {
-    Serial.println("Sensors failed!");
-    alarmState = 1;
-    return;
+    alarmCounter++;
+    // debouncing alarm
+    if (alarmCounter > 10)
+    {
+    Serial.println("Sensor failure!");
+      alarmState = 1;
+    }
+    // return;
   }
   else
   {
     alarmState = 0;
+    alarmCounter = 0;
   }
 
   // heart rate read
@@ -226,8 +234,17 @@ void loop()
     digitalWrite(RELAY_FAN, LOW);
   }
 
+  if (h > HM_THRESHOLD)
+  {
+    digitalWrite(RELAY_FAN, HIGH);
+  }
+  else
+  {
+    digitalWrite(RELAY_FAN, LOW);
+  }
+
   // google sheet post
-  // int adcval = analogRead(A0);
+
 #if DEBUG_MODE == 1
   Serial.println("Sending out data…");
 #endif
@@ -293,27 +310,22 @@ void readRGB()
   grn = 0;
   blu = 0;
   int n = 10;
-  for (int i = 0; i < n; ++i)
-  {
-    // read red component
-    digitalWrite(COLOR_2, LOW);
-    digitalWrite(COLOR_3, LOW);
-    red = red + pulseIn(COLOR_OUT, LOW);
-    delay(10);
 
-    // read green component
-    digitalWrite(COLOR_2, HIGH);
-    digitalWrite(COLOR_3, HIGH);
-    grn = grn + pulseIn(COLOR_OUT, LOW);
-    delay(10);
+  // read red component
+  digitalWrite(COLOR_2, LOW);
+  digitalWrite(COLOR_3, LOW);
+  red = red + pulseIn(COLOR_OUT, LOW);
+  delay(10);
 
-    // let's read blue component
-    digitalWrite(COLOR_2, LOW);
-    digitalWrite(COLOR_3, HIGH);
-    blu = blu + pulseIn(COLOR_OUT, LOW);
-    delay(10);
-  }
-  red = red / n;
-  grn = grn / n;
-  blu = blu / n;
+  // read green component
+  digitalWrite(COLOR_2, HIGH);
+  digitalWrite(COLOR_3, HIGH);
+  grn = grn + pulseIn(COLOR_OUT, LOW);
+  delay(10);
+
+  // let's read blue component
+  digitalWrite(COLOR_2, LOW);
+  digitalWrite(COLOR_3, HIGH);
+  blu = blu + pulseIn(COLOR_OUT, LOW);
+  delay(10);
 }
