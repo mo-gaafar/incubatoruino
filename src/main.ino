@@ -12,7 +12,13 @@
 #include <LiquidCrystal.h>
 
 // Debug mode (print out stuff)
-#define DEBUG_MODE 1
+/*
+0- No debug
+1- Debug
+2 - Debug esp wifi
+*/
+
+#define DEBUG_MODE 2
 
 // Wifi credentials
 const char *ssid = "gaafer 2.4";
@@ -38,8 +44,8 @@ int data = 0; // This is where we're going to stock our values
 #define LCD_D6 A4
 #define LCD_D7 A5
 #define LCD_E 9
-#define LCD_RW 10
-#define LCD_RS 11
+#define LCD_RW 12
+#define LCD_RS 13
 #define MAX_SLIDES 4
 int slideNumber = 0;
 
@@ -48,8 +54,8 @@ int slideNumber = 0;
 #define RELAY_FAN 4
 #define DHT_PIN 5
 #define DHT_TYPE DHT11
-#define ESP_TX_PIN 1
-#define ESP_RX_PIN 0
+#define ESP_TX_PIN 11
+#define ESP_RX_PIN 10
 
 #define TEMP_SKIN A0
 //#define HEART_RATE A1
@@ -92,14 +98,14 @@ PulseSensorPlayground pulseSensor;
 const int OUTPUT_TYPE = SERIAL_PLOTTER;
 
 const int PULSE_INPUT = A1;
-const int PULSE_BLINK = LED_BUILTIN;
+// const int PULSE_BLINK = LED_BUILTIN;
 // const int PULSE_FADE = 13;
 const int THRESHOLD = 550; // Adjust this number to avoid noise when idle
                            // Configure the PulseSensor manager.
 
 LiquidCrystal lcd(LCD_RS, LCD_RW, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
-SoftwareSerial ESP8266(10, 11); // RX,TX
+SoftwareSerial ESP8266(ESP_RX_PIN, ESP_TX_PIN); // RX,TX
 
 void setup()
 {
@@ -118,7 +124,7 @@ void setup()
 
   // Initialize the PulseSensor object
   pulseSensor.analogInput(PULSE_INPUT);
-  pulseSensor.blinkOnPulse(PULSE_BLINK);
+  // pulseSensor.blinkOnPulse(PULSE_BLINK);
   // pulseSensor.fadeOnPulse(PULSE_FADE);
 
   pulseSensor.setSerial(Serial);
@@ -146,7 +152,7 @@ void setup()
   dht.begin();
 
   // Start the software serial for communication with the ESP8266
-  ESP8266.begin(9600); // this assumes default baud rate is used by the module
+  ESP8266.begin(115200); // this assumes default baud rate is used by the module
 
   Serial.println("");
   Serial.println("Ready");
@@ -233,11 +239,11 @@ void loop()
   }
 
   // heart rate read
-
+#if DEBUG_MODE == 1
   Serial.println("Reading Pulse");
   // Serial.println(analogRead(PULSE_INPUT));
   Serial.println(pulseSensor.getBeatsPerMinute());
-
+#endif
   /*
      If a beat has happened since we last checked,
      write the per-beat information to Serial.
@@ -247,8 +253,10 @@ void loop()
     pulseSensor.outputBeat();
   }
 
-  // color read
+// color read
+#if DEBUG_MODE == 1
   Serial.println("Color:");
+#endif
   // Serial.println(getColor());
   colorLoop();
 
@@ -260,35 +268,40 @@ void loop()
     digitalWrite(RELAY_HEATER, HIGH);
     digitalWrite(RELAY_FAN, LOW);
   }
-  else
+  else if (tempSkinReading > TEMP_SKIN_THRESHOLD_H || h > HM_THRESHOLD)
   {
-    if (tempSkinReading > TEMP_SKIN_THRESHOLD_H)
-    {
-      digitalWrite(RELAY_HEATER, LOW);
-      digitalWrite(RELAY_FAN, HIGH);
-    }
-    else
-    {
-      digitalWrite(RELAY_HEATER, LOW);
-      digitalWrite(RELAY_FAN, LOW);
-    }
-  }
-
-  if (h > HM_THRESHOLD)
-  {
-    // TODO: fix fan electiricty
+    digitalWrite(RELAY_HEATER, LOW);
     digitalWrite(RELAY_FAN, HIGH);
   }
   else
   {
+    digitalWrite(RELAY_HEATER, LOW);
     digitalWrite(RELAY_FAN, LOW);
   }
 
+  // if (h > HM_THRESHOLD)
+  // {
+  //   // TODO: fix fan electiricty
+  //   digitalWrite(RELAY_FAN, HIGH);
+  // }
+
   // google sheet post
 
-#if DEBUG_MODE == 1
+#if DEBUG_MODE == 2
+  // listen for communication from the ESP8266 and then write it to the serial monitor
+  if (ESP8266.available())
+  {
+    Serial.write(ESP8266.read());
+  }
+
+  // listen for user input and send it to the ESP8266
+  if (Serial.available())
+  {
+    ESP8266.write(Serial.read());
+  }
   Serial.println("Sending out data…");
 #endif
+
   ESP8266.println("AT+CIPSEND=0,16");
   ESP8266.println("POST https://script.google.com/macros/s/AKfycbzPC5yj-H_a1P03F7VZIvknGoh-oZzunQiIb6jEi0q2gYw7maxfD7vtV8IcFv9WG4Ml/exec?heartrate=35&incubatortemp=25&infanttemp=35&humidity=5&juandice=1 HTTPS/1.1");
   ESP8266.println();
@@ -341,46 +354,67 @@ void colorLoop()
 
   if (redfrequency > 25 && redfrequency < 77)
   {
+#if DEBUG_MODE == 1
     Serial.println("RED COLOUR");
+#endif
   }
+
   else if (bluefrequency > 25 && bluefrequency < 77)
   {
+#if DEBUG_MODE == 1
     Serial.println("BLUE COLOUR");
+#endif
   }
   else if (greenfrequency > 25 && greenfrequency < 77)
 
   {
+#if DEBUG_MODE == 1
     Serial.println("GREEN COLOUR");
+#endif
   }
   else if (redfrequency > 77 && redfrequency < 130)
   {
     countJaundice++;
+#if DEBUG_MODE == 1
     Serial.println("YELLOW COLOUR");
+#endif
   }
   else if (redfrequency > 130 && redfrequency < 180)
   {
     countJaundice++;
+#if DEBUG_MODE == 1
     Serial.println("ORANGE COLOUR");
+#endif
   }
   else if (redfrequency > 180 && redfrequency < 230)
   {
+#if DEBUG_MODE == 1
     Serial.println("PINK COLOUR");
+#endif
   }
   else if (redfrequency > 230 && redfrequency < 280)
   {
+#if DEBUG_MODE == 1
     Serial.println("PURPLE COLOUR");
+#endif
   }
   else if (redfrequency > 280 && redfrequency < 330)
   {
+#if DEBUG_MODE == 1
     Serial.println("BROWN COLOUR");
+#endif
   }
   else if (redfrequency > 330 && redfrequency < 380)
   {
+#if DEBUG_MODE == 1
     Serial.println("WHITE COLOUR");
+#endif
   }
   else
   {
+#if DEBUG_MODE == 1
     Serial.println("NO COLOUR");
+#endif
   }
 }
 
