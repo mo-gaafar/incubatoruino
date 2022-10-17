@@ -164,7 +164,7 @@ void setup()
   ESP8266.println("AT+CWMODE=3");
   delay(1000);
   Serial.println("Connecting to WiFi");
-  ESP8266.println("\"gaafer 2.4\", \"01027099005\""); // insert your own SSID and password here
+  ESP8266.println("\"zeyad\", \"123456789\""); // insert your own SSID and password here
   delay(1000);
   Serial.println("Establishing TCP connection");
   ESP8266.println("\"AT+CIPSTART=0\",\"TCP\",\"www.teachmemicro.com\",\"80\"");
@@ -173,6 +173,7 @@ void setup()
 
 void loop()
 {
+  delay(200);
 
   // alarm block
   if (alarmState >= 1)
@@ -263,21 +264,44 @@ void loop()
   // lcd print?
 
   // heater and fan control
-  if (tempSkinReading < TEMP_SKIN_THRESHOLD_L)
-  {
-    digitalWrite(RELAY_HEATER, HIGH);
-    digitalWrite(RELAY_FAN, LOW);
-  }
-  else if (tempSkinReading > TEMP_SKIN_THRESHOLD_H || h > HM_THRESHOLD)
+
+  if (tempSkinReading > TEMP_SKIN_THRESHOLD_H)
   {
     digitalWrite(RELAY_HEATER, LOW);
-    digitalWrite(RELAY_FAN, HIGH);
+  }
+  else if (tempSkinReading < TEMP_SKIN_THRESHOLD_L)
+  {
+    digitalWrite(RELAY_HEATER, HIGH);
   }
   else
   {
     digitalWrite(RELAY_HEATER, LOW);
+  }
+
+  if (h > HM_THRESHOLD or tempSkinReading > TEMP_SKIN_THRESHOLD_H)
+  {
+    digitalWrite(RELAY_FAN, HIGH);
+  }
+  else
+  {
     digitalWrite(RELAY_FAN, LOW);
   }
+
+  // if (tempSkinReading < TEMP_SKIN_THRESHOLD_L)
+  // {
+  //   digitalWrite(RELAY_HEATER, HIGH);
+  //   digitalWrite(RELAY_FAN, LOW);
+  // }
+  // if (tempSkinReading > TEMP_SKIN_THRESHOLD_H || h > HM_THRESHOLD)
+  // {
+  //   digitalWrite(RELAY_HEATER, LOW);
+  //   digitalWrite(RELAY_FAN, HIGH);
+  // }
+  // else
+  // {
+  //   digitalWrite(RELAY_HEATER, LOW);
+  //   digitalWrite(RELAY_FAN, LOW);
+  // }
 
   // if (h > HM_THRESHOLD)
   // {
@@ -303,7 +327,7 @@ void loop()
 #endif
 
   ESP8266.println("AT+CIPSEND=0,16");
-  ESP8266.println("POST https://script.google.com/macros/s/AKfycbzPC5yj-H_a1P03F7VZIvknGoh-oZzunQiIb6jEi0q2gYw7maxfD7vtV8IcFv9WG4Ml/exec?heartrate=35&incubatortemp=25&infanttemp=35&humidity=5&juandice=1 HTTPS/1.1");
+  ESP8266.println("AT+HTTPCLIENT=3,1,\"https://script.google.com/macros/s/AKfycbzPC5yj-H_a1P03F7VZIvknGoh-oZzunQiIb6jEi0q2gYw7maxfD7vtV8IcFv9WG4Ml/exec?heartrate=35&incubatortemp=25&infanttemp=35&humidity=5&juandice=1\",,,1");
   ESP8266.println();
   ESP8266.println();
   delay(20);
